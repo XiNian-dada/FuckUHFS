@@ -44,7 +44,6 @@ class Login {
         return cookies;
     }
 
-
     public String getExamList(String examListUrl, Map<String, String> cookies) throws Exception {
         URL url = new URL(examListUrl);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -64,11 +63,28 @@ class Login {
         }
 
         conn.disconnect();
-
-        // 打印获取到的响应内容
-        System.out.println("Response from server: " + content.toString());
-
         return content.toString();
     }
 
+    public String getExamOverview(String overviewUrl, Map<String, String> cookies) throws Exception {
+        URL url = new URL(overviewUrl);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+
+        for (Map.Entry<String, String> cookie : cookies.entrySet()) {
+            conn.addRequestProperty("Cookie", cookie.getKey() + "=" + cookie.getValue());
+        }
+
+        StringBuilder content;
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+            String inputLine;
+            content = new StringBuilder();
+            while ((inputLine = in.readLine()) != null) {
+                content.append(inputLine);
+            }
+        }
+
+        conn.disconnect();
+        return content.toString();
+    }
 }
