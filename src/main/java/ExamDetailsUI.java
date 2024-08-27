@@ -1,54 +1,135 @@
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.MouseWheelEvent;
+import java.awt.event.MouseWheelListener;
+import java.awt.image.BufferedImage;
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.text.DecimalFormat;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import javax.imageio.ImageIO;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import javax.imageio.ImageIO;
-import javax.swing.*;
-import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.io.*;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.util.Map;
-
 public class ExamDetailsUI extends JFrame {
-    private String examId; // Add examId field
-
+    private String examId;
+    private static final DecimalFormat DECIMAL_FORMAT = new DecimalFormat("0.#");
+    private JPanel questionsPanel;
+    private boolean showAllQuestions = true; // 默认显示所有题目
+    private JProgressBar progressBar;
     public ExamDetailsUI(String overviewResponse, Map<String, String> cookies, String examId) {
-        this.examId = examId; // Initialize examId
-        setTitle("Exam Details");
-        setSize(600, 400);
+        this.examId = examId;
+        setTitle("考试详情");
+        setSize(800, 600);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setLocationRelativeTo(null);
-
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        JScrollPane scrollPane = new JScrollPane(panel);
+        progressBar = new JProgressBar(0, 100);
+        progressBar.setStringPainted(true);
+        add(progressBar, BorderLayout.SOUTH);
+        JPanel mainPanel = new JPanel(new BorderLayout());
+        JScrollPane scrollPane = new JScrollPane(mainPanel);
         add(scrollPane);
+
+        JPanel controlPanel = new JPanel();
+        JButton backButton = new JButton("返回");
+        JButton showAllButton = new JButton("查看全部题");
+        JButton showIncorrectButton = new JButton("仅看错题");
+
+        controlPanel.add(backButton);
+        controlPanel.add(showAllButton);
+        controlPanel.add(showIncorrectButton);
+
+        mainPanel.add(controlPanel, BorderLayout.NORTH);
+
+        questionsPanel = new JPanel();
+        questionsPanel.setLayout(new BoxLayout(questionsPanel, BoxLayout.Y_AXIS));
+        questionsPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+        mainPanel.add(new JScrollPane(questionsPanel), BorderLayout.CENTER);
+
+        // Set button actions
+        backButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                dispose(); // Close the current window
+            }
+        });
+
+        showAllButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                showAllQuestions = true;
+                updateQuestionPanel(cookies);
+            }
+        });
+
+        showIncorrectButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                showAllQuestions = false;
+                updateQuestionPanel(cookies);
+            }
+        });
 
         try {
             JSONObject jsonResponse = new JSONObject(overviewResponse);
             JSONObject data = jsonResponse.getJSONObject("data");
 
             // Exam overview
-            int manfen = data.getInt("manfen");
-            int score = data.getInt("score");
-            int manfenBeforeGrading = data.getInt("manfenBeforeGrading");
-            int scoreBeforeGrading = data.getInt("scoreBeforeGrading");
+            double manfen = data.getDouble("manfen");
+            double score = data.getDouble("score");
+            double manfenBeforeGrading = data.getDouble("manfenBeforeGrading");
+            double scoreBeforeGrading = data.getDouble("scoreBeforeGrading");
             int classRank = data.getInt("classRank");
             int gradeRank = data.getInt("gradeRank");
             int classStuNum = data.getInt("classStuNum");
             int gradeStuNum = data.getInt("gradeStuNum");
 
             JPanel overviewPanel = new JPanel();
-            overviewPanel.setLayout(new BoxLayout(overviewPanel, BoxLayout.Y_AXIS));
-            JLabel overviewLabel = new JLabel(String.format(
-                    "本科赋分满分: %d\n本科赋分得分: %d\n原始满分: %d\n原始得分: %d\n班级排名: %d\n年级排名: %d\n班级总人数: %d\n年级总人数: %d\n\n",
-                    manfen, score, manfenBeforeGrading, scoreBeforeGrading, classRank, gradeRank, classStuNum, gradeStuNum
-            ));
-            overviewPanel.add(overviewLabel);
-            panel.add(overviewPanel);
+            overviewPanel.setLayout(new GridBagLayout());
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.insets = new Insets(5, 5, 5, 5);
+
+            gbc.gridx = 0;
+            gbc.gridy = 0;
+            JLabel overviewLabel = new JLabel("本次考试概况");
+            overviewLabel.setFont(new Font("SansSerif", Font.BOLD, 30));
+            overviewPanel.add(overviewLabel, gbc);
+
+            gbc.gridy++;
+            String totalScoreHtml = String.format(
+                    "<html><body>" +
+                            "<span style='font-size: 20px; font-family: SansSerif; font-weight: bold; color: #000000;'>总得分: %s</span> " +
+                            "<span style='font-size: 18px; font-family: SansSerif; color: #666666;'>/ %s</span>" +
+                            "<br/>" +
+                            "<span style='font-size: 16px; font-family: SansSerif; color: #999999;'>原始得分: %s / %s</span>" +
+                            "</body></html>",
+                    formatNumber(score), formatNumber(manfen),
+                    formatNumber(scoreBeforeGrading), formatNumber(manfenBeforeGrading)
+            );
+            JLabel totalScoreLabel = new JLabel(totalScoreHtml);
+            overviewPanel.add(totalScoreLabel, gbc);
+
+            gbc.gridy++;
+            String rankHtml = String.format(
+                    "<html><body>" +
+                            "<span style='font-size: 22px; font-family: SansSerif; font-weight: bold;'>班级排名: %d</span> / <span style='font-size: 18px; font-family: SansSerif; color: #666666;'>%d</span><br/>" +
+                            "<span style='font-size: 22px; font-family: SansSerif; font-weight: bold;'>年级排名: %d</span> / <span style='font-size: 18px; font-family: SansSerif; color: #666666;'>%d</span>" +
+                            "</body></html>",
+                    classRank, classStuNum, gradeRank, gradeStuNum
+            );
+            JLabel rankLabel = new JLabel(rankHtml);
+            overviewPanel.add(rankLabel, gbc);
+
+            mainPanel.add(overviewPanel, BorderLayout.NORTH);
 
             // Papers
             JSONArray papers = data.getJSONArray("papers");
@@ -57,31 +138,22 @@ public class ExamDetailsUI extends JFrame {
                 String subject = paper.getString("subject");
                 String paperId = paper.getString("paperId");
                 String pid = paper.getString("pid");
-                int subjectManfen = paper.getInt("manfen");
-                int subjectScore = paper.getInt("score");
-                int subjectManfenBeforeGrading = paper.getInt("manfenBeforeGrading");
-                int subjectScoreBeforeGrading = paper.getInt("scoreBeforeGrading");
+                double subjectManfen = paper.getDouble("manfen");
+                double subjectScore = paper.getDouble("score");
+                double subjectManfenBeforeGrading = paper.getDouble("manfenBeforeGrading");
+                double subjectScoreBeforeGrading = paper.getDouble("scoreBeforeGrading");
 
-                JPanel paperPanel = new JPanel();
-                paperPanel.setLayout(new BoxLayout(paperPanel, BoxLayout.Y_AXIS));
-                JLabel paperLabel = new JLabel(String.format(
-                        "科目: %s\n本科赋分满分: %d\n本科赋分得分: %d\n赋分后满分: %d\n赋分后得分: %d\n",
-                        subject, subjectManfen, subjectScore, subjectManfenBeforeGrading, subjectScoreBeforeGrading
-                ));
-                JButton detailsButton = new JButton("查看详细得分");
-                paperPanel.add(paperLabel);
-                paperPanel.add(detailsButton);
-                panel.add(paperPanel);
-
-                // Handle details button click
-                detailsButton.addActionListener(new ActionListener() {
-                    @Override
-                    public void actionPerformed(ActionEvent e) {
-                        // Call a method to show detailed scores for the subject
-                        showSubjectDetails(subject, paperId, pid, cookies);
-                    }
-                });
+                addPaperPanel(subject, paperId, pid, subjectManfen, subjectScore, subjectManfenBeforeGrading, subjectScoreBeforeGrading, cookies);
             }
+
+            // Add mouse wheel listener for scroll
+            scrollPane.addMouseWheelListener(new MouseWheelListener() {
+                @Override
+                public void mouseWheelMoved(MouseWheelEvent e) {
+                    JScrollBar vertical = scrollPane.getVerticalScrollBar();
+                    vertical.setValue(vertical.getValue() + e.getWheelRotation() * 10);
+                }
+            });
 
         } catch (JSONException e) {
             e.printStackTrace();
@@ -90,6 +162,168 @@ public class ExamDetailsUI extends JFrame {
         setVisible(true);
     }
 
+    private void addPaperPanel(String subject, String paperId, String pid, double subjectManfen, double subjectScore, double subjectManfenBeforeGrading, double subjectScoreBeforeGrading, Map<String, String> cookies) {
+        JPanel paperPanel = new JPanel();
+        paperPanel.setLayout(new GridBagLayout());
+        GridBagConstraints gbcPaper = new GridBagConstraints();
+        gbcPaper.insets = new Insets(5, 5, 5, 5);
+
+        gbcPaper.gridx = 0;
+        gbcPaper.gridy = 0;
+        JLabel subjectLabel = new JLabel(subject + ": ");
+        subjectLabel.setFont(new Font("SansSerif", Font.BOLD, 45));
+        paperPanel.add(subjectLabel, gbcPaper);
+
+        gbcPaper.gridx = 1;
+        gbcPaper.gridy = 0;
+
+        String scoreHtml = String.format(
+                "<html><body>" +
+                        "<span style='font-size: 20px; font-family: SansSerif; font-weight: bold; color: #000000;'>得分: %s</span> " +
+                        "<span style='font-size: 18px; font-family: SansSerif; color: #666666;'> / %s</span>" +
+                        "<br/>" +
+                        "<span style='font-size: 16px; font-family: SansSerif; color: #999999;'>原始分: %s / %s</span>" +
+                        "</body></html>",
+                formatNumber(subjectScore), formatNumber(subjectManfen),
+                formatNumber(subjectScoreBeforeGrading), formatNumber(subjectManfenBeforeGrading)
+        );
+        JLabel scoreLabel = new JLabel(scoreHtml);
+        paperPanel.add(scoreLabel, gbcPaper);
+
+        gbcPaper.gridx = 2;
+        gbcPaper.gridy = 0;
+        JButton detailsButton = new JButton("查看详细得分");
+        detailsButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                showSubjectDetails(subject, paperId, pid, cookies);
+            }
+        });
+        paperPanel.add(detailsButton, gbcPaper);
+
+        questionsPanel.add(paperPanel);
+        questionsPanel.add(Box.createRigidArea(new Dimension(0, 10))); // Add some space between subjects
+    }
+
+    private void updateQuestionPanel(Map<String, String> cookies) {
+        questionsPanel.removeAll();
+        // Reload the questions based on the current filter
+        try {
+            String url = String.format("https://hfs-be.yunxiao.com/v3/exam/%s/papers/%s/answer-picture?pid=%s", examId, "paperId", "pid");
+            String detailsResponse = getResponse(url, cookies);
+            JSONArray questions = new JSONArray(detailsResponse);
+            for (int i = 0; i < questions.length(); i++) {
+                JSONObject question = questions.getJSONObject(i);
+                String subject = question.getString("subject");
+                double manfen = question.getDouble("manfen");
+                double score = question.getDouble("score");
+                boolean isCorrect = question.getBoolean("isCorrect"); // Assuming this key exists
+
+                // Show only incorrect questions if not in "showAllQuestions" mode
+                if (showAllQuestions || !isCorrect) {
+                    addQuestionPanel(question, cookies);
+                }
+            }
+            questionsPanel.revalidate();
+            questionsPanel.repaint();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void addQuestionPanel(JSONObject question, Map<String, String> cookies) throws IOException, JSONException {
+        String questionId = question.getString("id");
+        String questionText = question.getString("name");
+        String questionType = question.getString("type");
+        double manfen = question.getDouble("manfen");
+        double score = question.getDouble("score");
+        String myAnswer = question.getString("myAnswer");
+        String answer = question.getString("answer");
+        String url = question.getString("answerUrl");
+
+        JPanel questionPanel = new JPanel();
+        questionPanel.setLayout(new GridBagLayout());
+        GridBagConstraints gbcQuestion = new GridBagConstraints();
+        gbcQuestion.insets = new Insets(5, 5, 5, 5);
+
+        gbcQuestion.gridx = 0;
+        gbcQuestion.gridy = 0;
+        JLabel questionLabel = new JLabel(String.format("题号: %s", questionId));
+        questionLabel.setFont(new Font("SansSerif", Font.BOLD, 20));
+        questionPanel.add(questionLabel, gbcQuestion);
+
+        gbcQuestion.gridy++;
+        JLabel scoreLabel = new JLabel(String.format(
+                "<html><body>" +
+                        "<span style='font-size: 18px; font-family: SansSerif; font-weight: bold; color: #000000;'>得分: %s</span> " +
+                        "<span style='font-size: 16px; font-family: SansSerif; color: #666666;'>/ %s</span>" +
+                        "</body></html>",
+                formatNumber(score), formatNumber(manfen)
+        ));
+        questionPanel.add(scoreLabel, gbcQuestion);
+
+        gbcQuestion.gridy++;
+        JLabel typeLabel = new JLabel(String.format("题型: %s", questionType.equals("2") ? "选择题" : "主观题"));
+        questionPanel.add(typeLabel, gbcQuestion);
+
+        gbcQuestion.gridy++;
+        JLabel myAnswerLabel = new JLabel(String.format("我的答案: %s", myAnswer));
+        questionPanel.add(myAnswerLabel, gbcQuestion);
+
+        gbcQuestion.gridy++;
+        JLabel answerLabel = new JLabel(String.format("正确答案: %s", answer));
+        questionPanel.add(answerLabel, gbcQuestion);
+
+        gbcQuestion.gridy++;
+        if (questionType.equals("1")) { // Subjective question
+            BufferedImage image = getAnswerImage(url);
+            if (image != null) {
+                JLabel imageLabel = new JLabel(new ImageIcon(image));
+                questionPanel.add(imageLabel, gbcQuestion);
+            }
+        }
+
+        questionsPanel.add(questionPanel);
+    }
+
+    private BufferedImage getAnswerImage(String url) {
+        try {
+            HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+            connection.setRequestMethod("GET");
+            connection.connect();
+            InputStream inputStream = connection.getInputStream();
+            BufferedImage image = ImageIO.read(inputStream);
+            inputStream.close();
+            return image;
+        } catch (IOException e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private String getResponse(String url, Map<String, String> cookies) throws IOException {
+        URL obj = new URL(url);
+        HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+        con.setRequestMethod("GET");
+
+        // Set cookies
+        StringBuilder cookieHeader = new StringBuilder();
+        for (Map.Entry<String, String> entry : cookies.entrySet()) {
+            cookieHeader.append(entry.getKey()).append("=").append(entry.getValue()).append("; ");
+        }
+        if (cookieHeader.length() > 0) {
+            con.setRequestProperty("Cookie", cookieHeader.toString());
+        }
+
+        BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+        String inputLine;
+        StringBuilder response = new StringBuilder();
+        while ((inputLine = in.readLine()) != null) {
+            response.append(inputLine);
+        }
+        in.close();
+        return response.toString();
+    }
     private void showSubjectDetails(String subject, String paperId, String pid, Map<String, String> cookies) {
         try {
             String detailsUrl = String.format("https://hfs-be.yunxiao.com/v3/exam/%s/papers/%s/answer-picture?pid=%s",
@@ -98,38 +332,73 @@ public class ExamDetailsUI extends JFrame {
             Login login = new Login();
             String detailsResponse = login.getExamDetails(detailsUrl, cookies);
 
-            // 打印原始 JSON 响应以调试
+            // Print raw JSON response for debugging
             System.out.println("Raw JSON Response:\n" + detailsResponse);
 
-            JFrame detailsFrame = new JFrame("Detailed Scores for " + subject);
-            detailsFrame.setSize(600, 400);
+            JFrame detailsFrame = new JFrame("详细得分 - " + subject);
+            detailsFrame.setSize(840, 600);
             detailsFrame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
             detailsFrame.setLocationRelativeTo(null);
 
             JPanel panel = new JPanel(new BorderLayout());
-            JPanel formattedPanel = formatDetailedScores(detailsResponse, cookies);
+            JPanel formattedPanel = formatDetailedScores(detailsResponse, cookies,false);
             JScrollPane formattedScrollPane = new JScrollPane(formattedPanel);
 
             JTextArea rawTextArea = new JTextArea();
             rawTextArea.setEditable(false);
-            rawTextArea.setText("Raw JSON Response:\n" + detailsResponse);
+            rawTextArea.setText("原始 JSON 响应:\n" + detailsResponse);
             JScrollPane rawScrollPane = new JScrollPane(rawTextArea);
 
+            JPanel buttonPanel = new JPanel();
+            JButton viewAllButton = new JButton("查看全部题");
+            JButton viewWrongButton = new JButton("仅看错题");
+            JButton backButton = new JButton("返回");
+
+            buttonPanel.add(viewAllButton);
+            buttonPanel.add(viewWrongButton);
+            buttonPanel.add(backButton);
+
+            // Add action listeners to buttons
+            viewAllButton.addActionListener(e -> {
+                panel.removeAll();
+                panel.add(formattedScrollPane, BorderLayout.CENTER);
+                panel.add(buttonPanel, BorderLayout.SOUTH);
+                panel.revalidate();
+                panel.repaint();
+            });
+
+            viewWrongButton.addActionListener(e -> {
+                JPanel wrongPanel = formatDetailedScores(detailsResponse, cookies, true); // Pass a flag to filter wrong questions
+                panel.removeAll();
+                JScrollPane wrongScrollPane = new JScrollPane(wrongPanel);
+                panel.add(wrongScrollPane, BorderLayout.CENTER);
+                panel.add(buttonPanel, BorderLayout.SOUTH);
+                panel.revalidate();
+                panel.repaint();
+            });
+
+            backButton.addActionListener(e -> {
+                detailsFrame.dispose(); // Close the frame
+            });
+
             panel.add(formattedScrollPane, BorderLayout.CENTER);
-            panel.add(rawScrollPane, BorderLayout.SOUTH);
+            panel.add(buttonPanel, BorderLayout.SOUTH);
             detailsFrame.add(panel);
 
             detailsFrame.setVisible(true);
 
+
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(null, "Failed to retrieve detailed scores.");
+            JOptionPane.showMessageDialog(null, "无法获取详细得分。");
         }
     }
 
-    private JPanel formatDetailedScores(String detailsResponse, Map<String, String> cookies) {
+
+    private JPanel formatDetailedScores(String detailsResponse, Map<String, String> cookies, boolean onlyWrong) {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBorder(new EmptyBorder(10, 10, 10, 10)); // 添加内边距
 
         try {
             JSONObject jsonResponse = new JSONObject(detailsResponse);
@@ -143,6 +412,36 @@ public class ExamDetailsUI extends JFrame {
                 throw new JSONException("No questions field in data.");
             }
 
+            // 计算所有主观题的 URL
+            List<String> subjectiveUrls = new ArrayList<>();
+            for (int i = 0; i < questions.length(); i++) {
+                JSONObject question = questions.getJSONObject(i);
+                int type = question.getInt("type");
+                if (type == 1) { // 主观题
+                    String url = question.optString("url", "");
+                    if (!url.isEmpty()) {
+                        subjectiveUrls.add(url);
+                    }
+                }
+            }
+
+            // 创建进度条对话框
+            JDialog progressDialog = new JDialog((java.awt.Frame) null, "下载中...", true);
+            progressDialog.setSize(300, 100);
+            progressDialog.setLocationRelativeTo(null);
+
+            // 创建进度条，最大值为 URL 数量
+            JProgressBar progressBar = new JProgressBar(0, subjectiveUrls.size());
+            progressBar.setStringPainted(true);
+            progressDialog.add(progressBar);
+            progressDialog.setVisible(true);
+
+            // 下载主观题的图片
+            List<ImageIcon> images = downloadSubjectiveAnswers(subjectiveUrls, cookies, progressBar);
+
+            // 更新进度条对话框并确保关闭在下载完成后
+            SwingUtilities.invokeLater(() -> progressDialog.dispose());
+
             for (int i = 0; i < questions.length(); i++) {
                 JSONObject question = questions.getJSONObject(i);
                 String name = question.getString("name");
@@ -152,83 +451,145 @@ public class ExamDetailsUI extends JFrame {
                 String myAnswer = question.optString("myAnswer", "无");
                 String answer = question.optString("answer", "无");
 
+                // Skip questions if we are only displaying wrong ones and the score equals the maximum
+                if (onlyWrong && score == mafen) {
+                    continue;
+                }
+
                 // Create a panel for each question
                 JPanel questionPanel = new JPanel();
                 questionPanel.setLayout(new BoxLayout(questionPanel, BoxLayout.Y_AXIS));
+                questionPanel.setBorder(new EmptyBorder(5, 10, 5, 10)); // 添加内边距
 
-                questionPanel.add(new JLabel(String.format("题号: %s\n满分: %d\n得分: %d\n", name, mafen, score)));
+                // 创建题号和分数标签
+                JLabel questionLabel = new JLabel();
+                questionLabel.setText(String.format("<html><span style='font-size:26px; font-weight:bold;'>题号: %s</span><br>" +
+                        "<span style='font-size:24px; font-weight:bold; color: #000;'>得分: %d</span>" +
+                        "<span style='font-size:20px; font-weight:bold; color: #666666;'> / </span>" +
+                        "<span style='font-size:20px; color: #666666;'> %d</span><br></html>", name, score, mafen));
+                questionPanel.add(questionLabel);
 
                 if (type == 2) { // 选择题
-                    questionPanel.add(new JLabel(String.format("我的答案: %s\n正确答案: %s\n\n", myAnswer, answer)));
+                    JLabel answerLabel = new JLabel(String.format("<html><span style='font-size:20px; color: #000;'>我的答案: %s<br>" +
+                            "<span style='font-size:18px; color: #666666;'>正确答案: %s</span></span><br><br></html>", myAnswer, answer));
+                    questionPanel.add(answerLabel);
                 } else if (type == 1) { // 主观题
-                    String url = question.optString("url", "");
-                    if (!url.isEmpty()) {
-                        ImageIcon subjectiveAnswer = downloadSubjectiveAnswer(url, cookies);
+                    int imageIndex = i - (questions.length() - subjectiveUrls.size());
+                    if (imageIndex >= 0 && imageIndex < images.size()) {
+                        ImageIcon subjectiveAnswer = images.get(imageIndex);
                         if (subjectiveAnswer != null) {
-                            questionPanel.add(new JLabel("我的答题情况:"));
-                            JLabel imageLabel = new JLabel(subjectiveAnswer);
+                            questionPanel.add(new JLabel("<html><span style='font-size:20px;'>我的答题情况: </span></html>", JLabel.LEFT));
+                            JLabel imageLabel = new JLabel();
+                            Image image = subjectiveAnswer.getImage();
+                            int width = 760; // 设置宽度为面板宽度
+                            int height = (image.getHeight(null) * width) / image.getWidth(null); // 计算高度
+                            image = image.getScaledInstance(width, height, Image.SCALE_SMOOTH);
+                            imageLabel.setIcon(new ImageIcon(image));
                             questionPanel.add(imageLabel);
                         } else {
-                            questionPanel.add(new JLabel("我的答题情况: 无\n"));
+                            questionPanel.add(new JLabel("<html><span style='font-size:20px;'>我的答题情况: 无</span></html>"));
                         }
                     } else {
-                        questionPanel.add(new JLabel("我的答题情况: 无\n"));
+                        questionPanel.add(new JLabel("<html><span style='font-size:20px;'>我的答题情况: 无</span></html>"));
                     }
                 }
 
                 panel.add(questionPanel);
             }
+
         } catch (JSONException e) {
             e.printStackTrace();
         }
+
         return panel;
     }
 
+    private List<ImageIcon> downloadSubjectiveAnswers(List<String> urls, Map<String, String> cookies, JProgressBar progressBar) {
+        List<ImageIcon> images = new ArrayList<>();
+        int totalUrls = urls.size(); // URL 数量
+        AtomicInteger urlCounter = new AtomicInteger(0); // 已下载的 URL 数量
 
+        // 设置进度条的最大值
+        SwingUtilities.invokeLater(() -> progressBar.setMaximum(totalUrls));
 
-    private ImageIcon downloadSubjectiveAnswer(String urlString, Map<String, String> cookies) {
-        try {
-            String[] urls = urlString.split(",");
+        for (String url : urls) {
+            // 处理多个 URL
+            String[] urlArray = url.split(",\\s*"); // 用逗号和可选空格分隔 URL
 
-            for (String url : urls) {
+            for (String singleUrl : urlArray) {
                 // 清理 URL 中的意外符号
-                url = url.replace("[\"", "").replace("\"]", "").trim();
-                url = url.replace('"', ' ').replace("”", "").trim(); // 去除意外的“符号
-                System.out.println("Processed URL: " + url);
+                singleUrl = singleUrl.replace("[\"", "").replace("\"]", "").trim();
+                singleUrl = singleUrl.replace('"', ' ').replace("”", "").trim(); // 去除意外的“符号
+                System.out.println("Processing URL: " + singleUrl);
 
-                URL urlObj = new URL(url);
-                HttpURLConnection conn = (HttpURLConnection) urlObj.openConnection();
-                conn.setRequestMethod("GET");
+                try {
+                    URL urlObj = new URL(singleUrl);
+                    HttpURLConnection conn = (HttpURLConnection) urlObj.openConnection();
+                    conn.setRequestMethod("GET");
 
-                // 设置 Cookie 头信息
-                StringBuilder cookieString = new StringBuilder();
-                for (Map.Entry<String, String> entry : cookies.entrySet()) {
-                    cookieString.append(entry.getKey()).append("=").append(entry.getValue()).append("; ");
+                    // 设置 Cookie 头信息
+                    StringBuilder cookieString = new StringBuilder();
+                    for (Map.Entry<String, String> entry : cookies.entrySet()) {
+                        cookieString.append(entry.getKey()).append("=").append(entry.getValue()).append("; ");
+                    }
+                    conn.setRequestProperty("Cookie", cookieString.toString().trim());
+
+                    // 获取输入流
+                    InputStream in = conn.getInputStream();
+
+                    // 读取流中的数据到 ByteArrayOutputStream
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[1024];
+                    int bytesRead;
+
+                    while ((bytesRead = in.read(buffer)) != -1) {
+                        baos.write(buffer, 0, bytesRead);
+                    }
+                    in.close();
+
+                    // 将 ByteArrayOutputStream 转换为 ByteArrayInputStream
+                    ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(baos.toByteArray());
+                    BufferedImage image = ImageIO.read(byteArrayInputStream);
+
+                    // 更新 URL 计数器
+                    int currentCount = urlCounter.incrementAndGet();
+
+                    // 更新进度条
+                    SwingUtilities.invokeLater(() -> {
+                        progressBar.setValue(currentCount);
+                        progressBar.setString("下载进度: " + currentCount + "/" + totalUrls);
+                    });
+
+                    // 如果成功下载，保存图片
+                    if (image != null) {
+                        images.add(new ImageIcon(image));
+                    } else {
+                        images.add(null); // 如果没有图片，添加一个 null
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    images.add(null); // 如果下载失败，添加一个 null
                 }
-                conn.setRequestProperty("Cookie", cookieString.toString());
-
-                // 获取输入流
-                InputStream in = conn.getInputStream();
-
-                // 读取流中的数据到 ByteArrayOutputStream
-                ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                byte[] buffer = new byte[1024];
-                int bytesRead;
-                while ((bytesRead = in.read(buffer)) != -1) {
-                    baos.write(buffer, 0, bytesRead);
-                }
-                in.close();
-
-                // 将 ByteArrayOutputStream 转换为 ByteArrayInputStream
-                ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(baos.toByteArray());
-                Image image = ImageIO.read(byteArrayInputStream);
-
-                return new ImageIcon(image);
             }
-        } catch (Exception e) {
-            e.printStackTrace();
         }
-        return null;
+
+        // 确保进度条在完成后显示100%
+        SwingUtilities.invokeLater(() -> {
+            progressBar.setValue(totalUrls);
+            progressBar.setString("下载完成: " + totalUrls + "/" + totalUrls);
+        });
+
+        return images;
     }
 
+
+
+
+
+
+
+    private String formatNumber(double number) {
+        return DECIMAL_FORMAT.format(number);
+    }
 }
+
