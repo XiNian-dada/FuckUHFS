@@ -74,7 +74,7 @@ public class Main {
         try {
             JSONObject jsonResponse = new JSONObject(overviewResponse);
             JSONObject data = jsonResponse.getJSONObject("data");
-
+            System.out.println(data);
             int manfen = data.getInt("manfen");
             int score = data.getInt("score");
             int manfenBeforeGrading = data.getInt("manfenBeforeGrading");

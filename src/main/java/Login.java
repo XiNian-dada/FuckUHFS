@@ -43,7 +43,31 @@ class Login {
         conn.disconnect();
         return cookies;
     }
+    public String getExamDetails(String urlStr, Map<String, String> cookies) throws Exception {
+        URL url = new URL(urlStr);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setRequestMethod("GET");
 
+        // Set cookies in the request header
+        if (cookies != null && !cookies.isEmpty()) {
+            StringBuilder cookieHeader = new StringBuilder();
+            for (Map.Entry<String, String> entry : cookies.entrySet()) {
+                cookieHeader.append(entry.getKey()).append("=").append(entry.getValue()).append("; ");
+            }
+            connection.setRequestProperty("Cookie", cookieHeader.toString());
+        }
+
+        // Read the response
+        BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+        StringBuilder response = new StringBuilder();
+        String inputLine;
+        while ((inputLine = in.readLine()) != null) {
+            response.append(inputLine);
+        }
+        in.close();
+
+        return response.toString();
+    }
     public String getExamList(String examListUrl, Map<String, String> cookies) throws Exception {
         URL url = new URL(examListUrl);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
