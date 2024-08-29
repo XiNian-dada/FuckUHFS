@@ -177,7 +177,9 @@ public class LoginUI extends JFrame {
                             }
                             saveAccountsToFile(); // Save the accounts to file
                         }
-                        new ExamListUI(response, cookies);
+                        // 隐藏或关闭当前窗口
+                        setVisible(false); // 或者使用 dispose() 来完全关闭窗口
+                        new ExamListUI(response, cookies); // 打开 ExamListUI 窗口
                     }
                 } catch (Exception ex) {
                     ex.printStackTrace();
@@ -185,6 +187,8 @@ public class LoginUI extends JFrame {
                 }
             }
         });
+
+
 
         deleteAccountButton.addActionListener(new ActionListener() {
             @Override

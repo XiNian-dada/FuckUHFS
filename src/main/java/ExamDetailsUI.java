@@ -1,19 +1,12 @@
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.awt.event.MouseWheelEvent;
-import java.awt.event.MouseWheelListener;
-import java.awt.image.BufferedImage;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.imageio.ImageIO;
 import org.json.JSONArray;
@@ -22,310 +15,11 @@ import org.json.JSONObject;
 
 public class ExamDetailsUI extends JFrame {
     private String examId;
-    private static final DecimalFormat DECIMAL_FORMAT = new DecimalFormat("0.#");
-    private JPanel questionsPanel;
-    private boolean showAllQuestions = true; // 默认显示所有题目
-    private JProgressBar progressBar;
-    public ExamDetailsUI(String overviewResponse, Map<String, String> cookies, String examId) {
+    public ExamDetailsUI(String examId) {
         this.examId = examId;
-        setTitle("考试详情");
-        setSize(800, 600);
-        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        setLocationRelativeTo(null);
-        progressBar = new JProgressBar(0, 100);
-        progressBar.setStringPainted(true);
-        add(progressBar, BorderLayout.SOUTH);
-        JPanel mainPanel = new JPanel(new BorderLayout());
-        JScrollPane scrollPane = new JScrollPane(mainPanel);
-        add(scrollPane);
-
-        JPanel controlPanel = new JPanel();
-        JButton backButton = new JButton("返回");
-        JButton showAllButton = new JButton("查看全部题");
-        JButton showIncorrectButton = new JButton("仅看错题");
-
-        controlPanel.add(backButton);
-        controlPanel.add(showAllButton);
-        controlPanel.add(showIncorrectButton);
-
-        mainPanel.add(controlPanel, BorderLayout.NORTH);
-
-        questionsPanel = new JPanel();
-        questionsPanel.setLayout(new BoxLayout(questionsPanel, BoxLayout.Y_AXIS));
-        questionsPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
-
-        mainPanel.add(new JScrollPane(questionsPanel), BorderLayout.CENTER);
-
-        // Set button actions
-        backButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                dispose(); // Close the current window
-            }
-        });
-
-        showAllButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                showAllQuestions = true;
-                updateQuestionPanel(cookies);
-            }
-        });
-
-        showIncorrectButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                showAllQuestions = false;
-                updateQuestionPanel(cookies);
-            }
-        });
-
-        try {
-            JSONObject jsonResponse = new JSONObject(overviewResponse);
-            JSONObject data = jsonResponse.getJSONObject("data");
-
-            // Exam overview
-            double manfen = data.getDouble("manfen");
-            double score = data.getDouble("score");
-            double manfenBeforeGrading = data.getDouble("manfenBeforeGrading");
-            double scoreBeforeGrading = data.getDouble("scoreBeforeGrading");
-            int classRank = data.getInt("classRank");
-            int gradeRank = data.getInt("gradeRank");
-            int classStuNum = data.getInt("classStuNum");
-            int gradeStuNum = data.getInt("gradeStuNum");
-
-            JPanel overviewPanel = new JPanel();
-            overviewPanel.setLayout(new GridBagLayout());
-            GridBagConstraints gbc = new GridBagConstraints();
-            gbc.insets = new Insets(5, 5, 5, 5);
-
-            gbc.gridx = 0;
-            gbc.gridy = 0;
-            JLabel overviewLabel = new JLabel("本次考试概况");
-            overviewLabel.setFont(new Font("SansSerif", Font.BOLD, 30));
-            overviewPanel.add(overviewLabel, gbc);
-
-            gbc.gridy++;
-            String totalScoreHtml = String.format(
-                    "<html><body>" +
-                            "<span style='font-size: 20px; font-family: SansSerif; font-weight: bold; color: #000000;'>总得分: %s</span> " +
-                            "<span style='font-size: 18px; font-family: SansSerif; color: #666666;'>/ %s</span>" +
-                            "<br/>" +
-                            "<span style='font-size: 16px; font-family: SansSerif; color: #999999;'>原始得分: %s / %s</span>" +
-                            "</body></html>",
-                    formatNumber(score), formatNumber(manfen),
-                    formatNumber(scoreBeforeGrading), formatNumber(manfenBeforeGrading)
-            );
-            JLabel totalScoreLabel = new JLabel(totalScoreHtml);
-            overviewPanel.add(totalScoreLabel, gbc);
-
-            gbc.gridy++;
-            String rankHtml = String.format(
-                    "<html><body>" +
-                            "<span style='font-size: 22px; font-family: SansSerif; font-weight: bold;'>班级排名: %d</span> / <span style='font-size: 18px; font-family: SansSerif; color: #666666;'>%d</span><br/>" +
-                            "<span style='font-size: 22px; font-family: SansSerif; font-weight: bold;'>年级排名: %d</span> / <span style='font-size: 18px; font-family: SansSerif; color: #666666;'>%d</span>" +
-                            "</body></html>",
-                    classRank, classStuNum, gradeRank, gradeStuNum
-            );
-            JLabel rankLabel = new JLabel(rankHtml);
-            overviewPanel.add(rankLabel, gbc);
-
-            mainPanel.add(overviewPanel, BorderLayout.NORTH);
-
-            // Papers
-            JSONArray papers = data.getJSONArray("papers");
-            for (int i = 0; i < papers.length(); i++) {
-                JSONObject paper = papers.getJSONObject(i);
-                String subject = paper.getString("subject");
-                String paperId = paper.getString("paperId");
-                String pid = paper.getString("pid");
-                double subjectManfen = paper.getDouble("manfen");
-                double subjectScore = paper.getDouble("score");
-                double subjectManfenBeforeGrading = paper.getDouble("manfenBeforeGrading");
-                double subjectScoreBeforeGrading = paper.getDouble("scoreBeforeGrading");
-
-                addPaperPanel(subject, paperId, pid, subjectManfen, subjectScore, subjectManfenBeforeGrading, subjectScoreBeforeGrading, cookies);
-            }
-
-            // Add mouse wheel listener for scroll
-            scrollPane.addMouseWheelListener(new MouseWheelListener() {
-                @Override
-                public void mouseWheelMoved(MouseWheelEvent e) {
-                    JScrollBar vertical = scrollPane.getVerticalScrollBar();
-                    vertical.setValue(vertical.getValue() + e.getWheelRotation() * 10);
-                }
-            });
-
-        } catch (JSONException e) {
-            e.printStackTrace();
-        }
-
-        setVisible(true);
     }
 
-    private void addPaperPanel(String subject, String paperId, String pid, double subjectManfen, double subjectScore, double subjectManfenBeforeGrading, double subjectScoreBeforeGrading, Map<String, String> cookies) {
-        JPanel paperPanel = new JPanel();
-        paperPanel.setLayout(new GridBagLayout());
-        GridBagConstraints gbcPaper = new GridBagConstraints();
-        gbcPaper.insets = new Insets(5, 5, 5, 5);
-
-        gbcPaper.gridx = 0;
-        gbcPaper.gridy = 0;
-        JLabel subjectLabel = new JLabel(subject + ": ");
-        subjectLabel.setFont(new Font("SansSerif", Font.BOLD, 45));
-        paperPanel.add(subjectLabel, gbcPaper);
-
-        gbcPaper.gridx = 1;
-        gbcPaper.gridy = 0;
-
-        String scoreHtml = String.format(
-                "<html><body>" +
-                        "<span style='font-size: 20px; font-family: SansSerif; font-weight: bold; color: #000000;'>得分: %s</span> " +
-                        "<span style='font-size: 18px; font-family: SansSerif; color: #666666;'> / %s</span>" +
-                        "<br/>" +
-                        "<span style='font-size: 16px; font-family: SansSerif; color: #999999;'>原始分: %s / %s</span>" +
-                        "</body></html>",
-                formatNumber(subjectScore), formatNumber(subjectManfen),
-                formatNumber(subjectScoreBeforeGrading), formatNumber(subjectManfenBeforeGrading)
-        );
-        JLabel scoreLabel = new JLabel(scoreHtml);
-        paperPanel.add(scoreLabel, gbcPaper);
-
-        gbcPaper.gridx = 2;
-        gbcPaper.gridy = 0;
-        JButton detailsButton = new JButton("查看详细得分");
-        detailsButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                showSubjectDetails(subject, paperId, pid, cookies);
-            }
-        });
-        paperPanel.add(detailsButton, gbcPaper);
-
-        questionsPanel.add(paperPanel);
-        questionsPanel.add(Box.createRigidArea(new Dimension(0, 10))); // Add some space between subjects
-    }
-
-    private void updateQuestionPanel(Map<String, String> cookies) {
-        questionsPanel.removeAll();
-        // Reload the questions based on the current filter
-        try {
-            String url = String.format("https://hfs-be.yunxiao.com/v3/exam/%s/papers/%s/answer-picture?pid=%s", examId, "paperId", "pid");
-            String detailsResponse = getResponse(url, cookies);
-            JSONArray questions = new JSONArray(detailsResponse);
-            for (int i = 0; i < questions.length(); i++) {
-                JSONObject question = questions.getJSONObject(i);
-                String subject = question.getString("subject");
-                double manfen = question.getDouble("manfen");
-                double score = question.getDouble("score");
-                boolean isCorrect = question.getBoolean("isCorrect"); // Assuming this key exists
-
-                // Show only incorrect questions if not in "showAllQuestions" mode
-                if (showAllQuestions || !isCorrect) {
-                    addQuestionPanel(question, cookies);
-                }
-            }
-            questionsPanel.revalidate();
-            questionsPanel.repaint();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void addQuestionPanel(JSONObject question, Map<String, String> cookies) throws IOException, JSONException {
-        String questionId = question.getString("id");
-        String questionText = question.getString("name");
-        String questionType = question.getString("type");
-        double manfen = question.getDouble("manfen");
-        double score = question.getDouble("score");
-        String myAnswer = question.getString("myAnswer");
-        String answer = question.getString("answer");
-        String url = question.getString("answerUrl");
-
-        JPanel questionPanel = new JPanel();
-        questionPanel.setLayout(new GridBagLayout());
-        GridBagConstraints gbcQuestion = new GridBagConstraints();
-        gbcQuestion.insets = new Insets(5, 5, 5, 5);
-
-        gbcQuestion.gridx = 0;
-        gbcQuestion.gridy = 0;
-        JLabel questionLabel = new JLabel(String.format("题号: %s", questionId));
-        questionLabel.setFont(new Font("SansSerif", Font.BOLD, 20));
-        questionPanel.add(questionLabel, gbcQuestion);
-
-        gbcQuestion.gridy++;
-        JLabel scoreLabel = new JLabel(String.format(
-                "<html><body>" +
-                        "<span style='font-size: 18px; font-family: SansSerif; font-weight: bold; color: #000000;'>得分: %s</span> " +
-                        "<span style='font-size: 16px; font-family: SansSerif; color: #666666;'>/ %s</span>" +
-                        "</body></html>",
-                formatNumber(score), formatNumber(manfen)
-        ));
-        questionPanel.add(scoreLabel, gbcQuestion);
-
-        gbcQuestion.gridy++;
-        JLabel typeLabel = new JLabel(String.format("题型: %s", questionType.equals("2") ? "选择题" : "主观题"));
-        questionPanel.add(typeLabel, gbcQuestion);
-
-        gbcQuestion.gridy++;
-        JLabel myAnswerLabel = new JLabel(String.format("我的答案: %s", myAnswer));
-        questionPanel.add(myAnswerLabel, gbcQuestion);
-
-        gbcQuestion.gridy++;
-        JLabel answerLabel = new JLabel(String.format("正确答案: %s", answer));
-        questionPanel.add(answerLabel, gbcQuestion);
-
-        gbcQuestion.gridy++;
-        if (questionType.equals("1")) { // Subjective question
-            BufferedImage image = getAnswerImage(url);
-            if (image != null) {
-                JLabel imageLabel = new JLabel(new ImageIcon(image));
-                questionPanel.add(imageLabel, gbcQuestion);
-            }
-        }
-
-        questionsPanel.add(questionPanel);
-    }
-
-    private BufferedImage getAnswerImage(String url) {
-        try {
-            HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-            connection.setRequestMethod("GET");
-            connection.connect();
-            InputStream inputStream = connection.getInputStream();
-            BufferedImage image = ImageIO.read(inputStream);
-            inputStream.close();
-            return image;
-        } catch (IOException e) {
-            e.printStackTrace();
-            return null;
-        }
-    }
-
-    private String getResponse(String url, Map<String, String> cookies) throws IOException {
-        URL obj = new URL(url);
-        HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-        con.setRequestMethod("GET");
-
-        // Set cookies
-        StringBuilder cookieHeader = new StringBuilder();
-        for (Map.Entry<String, String> entry : cookies.entrySet()) {
-            cookieHeader.append(entry.getKey()).append("=").append(entry.getValue()).append("; ");
-        }
-        if (cookieHeader.length() > 0) {
-            con.setRequestProperty("Cookie", cookieHeader.toString());
-        }
-
-        BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
-        String inputLine;
-        StringBuilder response = new StringBuilder();
-        while ((inputLine = in.readLine()) != null) {
-            response.append(inputLine);
-        }
-        in.close();
-        return response.toString();
-    }
-    private void showSubjectDetails(String subject, String paperId, String pid, Map<String, String> cookies) {
+    public void showSubjectDetails(String subject, String paperId, String pid, Map<String, String> cookies) {
         try {
             String detailsUrl = String.format("https://hfs-be.yunxiao.com/v3/exam/%s/papers/%s/answer-picture?pid=%s",
                     examId, paperId, pid);
@@ -348,7 +42,6 @@ public class ExamDetailsUI extends JFrame {
             JTextArea rawTextArea = new JTextArea();
             rawTextArea.setEditable(false);
             rawTextArea.setText("原始 JSON 响应:\n" + detailsResponse);
-            JScrollPane rawScrollPane = new JScrollPane(rawTextArea);
 
             JPanel buttonPanel = new JPanel();
             JButton viewAllButton = new JButton("查看全部题");
@@ -502,17 +195,32 @@ public class ExamDetailsUI extends JFrame {
         int totalUrls = urls.size(); // URL 数量
         AtomicInteger urlCounter = new AtomicInteger(0); // 已下载的 URL 数量
 
+        // 设置进度条的颜色和样式
+        UIManager.put("ProgressBar.background", Color.LIGHT_GRAY);
+        UIManager.put("ProgressBar.foreground", new Color(70, 130, 180)); // 设置前景色为钢蓝色
+        UIManager.put("ProgressBar.border", BorderFactory.createLineBorder(Color.GRAY, 2)); // 设置边框
+        UIManager.put("ProgressBar.selectionBackground", Color.BLACK); // 选中文本的背景色
+        UIManager.put("ProgressBar.selectionForeground", Color.WHITE); // 选中文本的前景色
+
         // 创建进度条对话框
         JDialog progressDialog = new JDialog((java.awt.Frame) null, "下载答题数据中...", true);
         progressDialog.setSize(400, 200);
         progressDialog.setLocationRelativeTo(null);
+        progressDialog.setLayout(new BorderLayout()); // 使用 BorderLayout 布局
 
         // 创建进度条
         JProgressBar progressBar = new JProgressBar(0, totalUrls);
         progressBar.setStringPainted(true);
+        progressBar.setFont(new Font("SansSerif", Font.BOLD, 16)); // 更改进度条字体
 
-        // 添加进度条到对话框
-        progressDialog.add(progressBar);
+        // 创建提示标签
+        JLabel messageLabel = new JLabel("正在下载，请稍候...");
+        messageLabel.setHorizontalAlignment(SwingConstants.CENTER); // 居中对齐
+        messageLabel.setFont(new Font("SansSerif", Font.PLAIN, 14)); // 设置字体
+
+        // 添加提示标签和进度条到对话框
+        progressDialog.add(messageLabel, BorderLayout.NORTH);
+        progressDialog.add(progressBar, BorderLayout.CENTER);
 
         // 调用 pack() 以调整对话框大小并布局组件
         progressDialog.pack();
@@ -576,9 +284,5 @@ public class ExamDetailsUI extends JFrame {
     }
 
 
-
-    private String formatNumber(double number) {
-        return DECIMAL_FORMAT.format(number);
-    }
 }
 
