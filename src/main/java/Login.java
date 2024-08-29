@@ -18,7 +18,10 @@ class Login {
 
         // 将密码进行Base64编码
         String encodedPassword = Base64.getEncoder().encodeToString(password.getBytes("UTF-8"));
-
+        System.out.println(roleType);
+        System.out.println(password);
+        System.out.println(encodedPassword);
+        System.out.println(username);
         String jsonInputString = String.format(
                 "{\"loginName\":\"%s\",\"password\":\"%s\",\"roleType\":%d,\"loginType\":1,\"rememberMe\":2}",
                 username, encodedPassword, roleType

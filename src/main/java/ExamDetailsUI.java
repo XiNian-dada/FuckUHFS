@@ -13,6 +13,7 @@ import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.imageio.ImageIO;
 import org.json.JSONArray;
@@ -341,7 +342,7 @@ public class ExamDetailsUI extends JFrame {
             detailsFrame.setLocationRelativeTo(null);
 
             JPanel panel = new JPanel(new BorderLayout());
-            JPanel formattedPanel = formatDetailedScores(detailsResponse, cookies,false);
+            JPanel formattedPanel = formatDetailedScores(detailsResponse, cookies, false);
             JScrollPane formattedScrollPane = new JScrollPane(formattedPanel);
 
             JTextArea rawTextArea = new JTextArea();
@@ -387,13 +388,11 @@ public class ExamDetailsUI extends JFrame {
 
             detailsFrame.setVisible(true);
 
-
         } catch (Exception e) {
             e.printStackTrace();
             JOptionPane.showMessageDialog(null, "无法获取详细得分。");
         }
     }
-
 
     private JPanel formatDetailedScores(String detailsResponse, Map<String, String> cookies, boolean onlyWrong) {
         JPanel panel = new JPanel();
@@ -418,29 +417,17 @@ public class ExamDetailsUI extends JFrame {
                 JSONObject question = questions.getJSONObject(i);
                 int type = question.getInt("type");
                 if (type == 1) { // 主观题
-                    String url = question.optString("url", "");
-                    if (!url.isEmpty()) {
-                        subjectiveUrls.add(url);
+                    JSONArray urlsArray = question.optJSONArray("url");
+                    if (urlsArray != null) {
+                        for (int j = 0; j < urlsArray.length(); j++) {
+                            subjectiveUrls.add(urlsArray.getString(j));
+                        }
                     }
                 }
             }
 
-            // 创建进度条对话框
-            JDialog progressDialog = new JDialog((java.awt.Frame) null, "下载中...", true);
-            progressDialog.setSize(300, 100);
-            progressDialog.setLocationRelativeTo(null);
-
-            // 创建进度条，最大值为 URL 数量
-            JProgressBar progressBar = new JProgressBar(0, subjectiveUrls.size());
-            progressBar.setStringPainted(true);
-            progressDialog.add(progressBar);
-            progressDialog.setVisible(true);
-
             // 下载主观题的图片
-            List<ImageIcon> images = downloadSubjectiveAnswers(subjectiveUrls, cookies, progressBar);
-
-            // 更新进度条对话框并确保关闭在下载完成后
-            SwingUtilities.invokeLater(() -> progressDialog.dispose());
+            List<ImageIcon> images = downloadSubjectiveAnswers(subjectiveUrls, cookies);
 
             for (int i = 0; i < questions.length(); i++) {
                 JSONObject question = questions.getJSONObject(i);
@@ -474,23 +461,29 @@ public class ExamDetailsUI extends JFrame {
                             "<span style='font-size:18px; color: #666666;'>正确答案: %s</span></span><br><br></html>", myAnswer, answer));
                     questionPanel.add(answerLabel);
                 } else if (type == 1) { // 主观题
-                    int imageIndex = i - (questions.length() - subjectiveUrls.size());
-                    if (imageIndex >= 0 && imageIndex < images.size()) {
-                        ImageIcon subjectiveAnswer = images.get(imageIndex);
-                        if (subjectiveAnswer != null) {
-                            questionPanel.add(new JLabel("<html><span style='font-size:20px;'>我的答题情况: </span></html>", JLabel.LEFT));
-                            JLabel imageLabel = new JLabel();
-                            Image image = subjectiveAnswer.getImage();
-                            int width = 760; // 设置宽度为面板宽度
-                            int height = (image.getHeight(null) * width) / image.getWidth(null); // 计算高度
-                            image = image.getScaledInstance(width, height, Image.SCALE_SMOOTH);
-                            imageLabel.setIcon(new ImageIcon(image));
-                            questionPanel.add(imageLabel);
-                        } else {
-                            questionPanel.add(new JLabel("<html><span style='font-size:20px;'>我的答题情况: 无</span></html>"));
+                    JSONArray urlsArray = question.optJSONArray("url");
+                    if (urlsArray != null) {
+                        for (int j = 0; j < urlsArray.length(); j++) {
+                            String url = urlsArray.getString(j);
+                            int imageIndex = subjectiveUrls.indexOf(url);
+                            if (imageIndex >= 0 && imageIndex < images.size()) {
+                                ImageIcon subjectiveAnswer = images.get(imageIndex);
+                                if (subjectiveAnswer != null) {
+                                    questionPanel.add(new JLabel("<html><span style='font-size:20px;'>我的答题情况: </span></html>", JLabel.LEFT));
+                                    JLabel imageLabel = new JLabel();
+                                    Image image = subjectiveAnswer.getImage();
+                                    int width = 760; // 设置宽度为面板宽度
+                                    int height = (image.getHeight(null) * width) / image.getWidth(null); // 计算高度
+                                    image = image.getScaledInstance(width, height, Image.SCALE_SMOOTH);
+                                    imageLabel.setIcon(new ImageIcon(image));
+                                    questionPanel.add(imageLabel);
+                                } else {
+                                    questionPanel.add(new JLabel("<html><span style='font-size:20px;'>我的答题情况: 无</span></html>"));
+                                }
+                            } else {
+                                questionPanel.add(new JLabel("<html><span style='font-size:20px;'>我的答题情况: 无</span></html>"));
+                            }
                         }
-                    } else {
-                        questionPanel.add(new JLabel("<html><span style='font-size:20px;'>我的答题情况: 无</span></html>"));
                     }
                 }
 
@@ -504,87 +497,83 @@ public class ExamDetailsUI extends JFrame {
         return panel;
     }
 
-    private List<ImageIcon> downloadSubjectiveAnswers(List<String> urls, Map<String, String> cookies, JProgressBar progressBar) {
+    private List<ImageIcon> downloadSubjectiveAnswers(List<String> urls, Map<String, String> cookies) {
         List<ImageIcon> images = new ArrayList<>();
         int totalUrls = urls.size(); // URL 数量
         AtomicInteger urlCounter = new AtomicInteger(0); // 已下载的 URL 数量
 
-        // 设置进度条的最大值
-        SwingUtilities.invokeLater(() -> progressBar.setMaximum(totalUrls));
+        // 创建进度条对话框
+        JDialog progressDialog = new JDialog((java.awt.Frame) null, "下载答题数据中...", true);
+        progressDialog.setSize(400, 200);
+        progressDialog.setLocationRelativeTo(null);
 
-        for (String url : urls) {
-            // 处理多个 URL
-            String[] urlArray = url.split(",\\s*"); // 用逗号和可选空格分隔 URL
+        // 创建进度条
+        JProgressBar progressBar = new JProgressBar(0, totalUrls);
+        progressBar.setStringPainted(true);
 
-            for (String singleUrl : urlArray) {
-                // 清理 URL 中的意外符号
-                singleUrl = singleUrl.replace("[\"", "").replace("\"]", "").trim();
-                singleUrl = singleUrl.replace('"', ' ').replace("”", "").trim(); // 去除意外的“符号
-                System.out.println("Processing URL: " + singleUrl);
+        // 添加进度条到对话框
+        progressDialog.add(progressBar);
 
-                try {
-                    URL urlObj = new URL(singleUrl);
-                    HttpURLConnection conn = (HttpURLConnection) urlObj.openConnection();
-                    conn.setRequestMethod("GET");
+        // 调用 pack() 以调整对话框大小并布局组件
+        progressDialog.pack();
 
-                    // 设置 Cookie 头信息
-                    StringBuilder cookieString = new StringBuilder();
-                    for (Map.Entry<String, String> entry : cookies.entrySet()) {
-                        cookieString.append(entry.getKey()).append("=").append(entry.getValue()).append("; ");
+        // 创建 SwingWorker 来处理图片下载
+        SwingWorker<Void, Integer> worker = new SwingWorker<Void, Integer>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                for (String url : urls) {
+                    // 处理多个 URL
+                    String[] urlArray = url.split(",\\s*"); // 用逗号和可选空格分隔 URL
+
+                    for (String singleUrl : urlArray) {
+                        // 清理 URL 中的意外符号
+                        singleUrl = singleUrl.replace("[\"", "").replace("\"]", "").trim();
+                        singleUrl = singleUrl.replace('"', ' ').replace("”", "").trim();
+
+                        try {
+                            URL imageUrl = new URL(singleUrl);
+                            HttpURLConnection connection = (HttpURLConnection) imageUrl.openConnection();
+                            connection.setRequestMethod("GET");
+                            connection.setRequestProperty("Cookie", String.join("; ", cookies.entrySet().stream()
+                                    .map(entry -> entry.getKey() + "=" + entry.getValue())
+                                    .toArray(String[]::new)));
+
+                            InputStream inputStream = connection.getInputStream();
+                            ImageIcon imageIcon = new ImageIcon(ImageIO.read(inputStream));
+                            images.add(imageIcon);
+
+                            // 更新进度条
+                            int progress = urlCounter.incrementAndGet();
+                            setProgress(progress);
+                            publish(progress);
+
+                            inputStream.close();
+                            connection.disconnect();
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
                     }
-                    conn.setRequestProperty("Cookie", cookieString.toString().trim());
-
-                    // 获取输入流
-                    InputStream in = conn.getInputStream();
-
-                    // 读取流中的数据到 ByteArrayOutputStream
-                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                    byte[] buffer = new byte[1024];
-                    int bytesRead;
-
-                    while ((bytesRead = in.read(buffer)) != -1) {
-                        baos.write(buffer, 0, bytesRead);
-                    }
-                    in.close();
-
-                    // 将 ByteArrayOutputStream 转换为 ByteArrayInputStream
-                    ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(baos.toByteArray());
-                    BufferedImage image = ImageIO.read(byteArrayInputStream);
-
-                    // 更新 URL 计数器
-                    int currentCount = urlCounter.incrementAndGet();
-
-                    // 更新进度条
-                    SwingUtilities.invokeLater(() -> {
-                        progressBar.setValue(currentCount);
-                        progressBar.setString("下载进度: " + currentCount + "/" + totalUrls);
-                    });
-
-                    // 如果成功下载，保存图片
-                    if (image != null) {
-                        images.add(new ImageIcon(image));
-                    } else {
-                        images.add(null); // 如果没有图片，添加一个 null
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    images.add(null); // 如果下载失败，添加一个 null
                 }
+                return null;
             }
-        }
 
-        // 确保进度条在完成后显示100%
-        SwingUtilities.invokeLater(() -> {
-            progressBar.setValue(totalUrls);
-            progressBar.setString("下载完成: " + totalUrls + "/" + totalUrls);
-        });
+            @Override
+            protected void process(List<Integer> chunks) {
+                int progress = chunks.get(chunks.size() - 1);
+                progressBar.setValue(progress);
+            }
+
+            @Override
+            protected void done() {
+                progressDialog.dispose();
+            }
+        };
+
+        worker.execute();
+        progressDialog.setVisible(true);
 
         return images;
     }
-
-
-
-
 
 
 
