@@ -23,8 +23,8 @@ public class LoginUI extends JFrame {
     private JButton deleteAccountButton;
 
     private static final boolean DEBUG_MODE = false; // Set to true to enable debug mode
-    private static final String DEBUG_USERNAME = "15319770091";
-    private static final String DEBUG_PASSWORD = "337289t";
+    private static final String DEBUG_USERNAME = "xxxx";
+    private static final String DEBUG_PASSWORD = "xxxx";
 
     private Map<String, String[]> savedAccounts; // Updated to store password and roleType
     private static final String ACCOUNT_FILE = "saved_accounts.properties";
@@ -165,11 +165,13 @@ public class LoginUI extends JFrame {
                     Login login = new Login();
                     Map<String, String> cookies = login.loginAndGetCookies("https://hfs-be.yunxiao.com/v2/users/sessions", username, password, roleType);
                     String response = login.getExamList("https://hfs-be.yunxiao.com/v3/exam/list", cookies);
+                    String response_2 = login.getExamList("https://hfs-be.yunxiao.com/v2/wrong-items/overview", cookies);
 
                     JSONObject jsonResponse = new JSONObject(response);
                     if (jsonResponse.isNull("data") || jsonResponse.get("data").equals(JSONObject.NULL)) {
                         JOptionPane.showMessageDialog(null, "登录失败，请检查你的账号密码。");
                     } else {
+
                         if (savePasswordCheckBox.isSelected()) {
                             savedAccounts.put(username, new String[]{Base64.getEncoder().encodeToString(password.getBytes()), String.valueOf(roleType)}); // Encode and save password with roleType
                             if (accountSelectionBox.getItemCount() > 1 && !isAccountAlreadyInComboBox(username)) {
@@ -177,14 +179,16 @@ public class LoginUI extends JFrame {
                             }
                             saveAccountsToFile(); // Save the accounts to file
                         }
+
                         // 隐藏或关闭当前窗口
                         setVisible(false); // 或者使用 dispose() 来完全关闭窗口
-                        new ExamListUI(response, cookies); // 打开 ExamListUI 窗口
+                        new ExamListUI(response, response_2, cookies); // 打开 ExamListUI 窗口
                     }
                 } catch (Exception ex) {
                     ex.printStackTrace();
                     JOptionPane.showMessageDialog(null, "登录失败，请检查你的账号密码。");
                 }
+
             }
         });
 

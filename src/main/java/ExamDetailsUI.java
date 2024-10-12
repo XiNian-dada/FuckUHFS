@@ -18,17 +18,20 @@ public class ExamDetailsUI extends JFrame {
     public ExamDetailsUI(String examId) {
         this.examId = examId;
     }
-
-    public void showSubjectDetails(String subject, String paperId, String pid, Map<String, String> cookies) {
+    private Double totalScore = 0.0;
+    public void showSubjectDetails(String subject, String paperId, String pid, Map<String, String> cookies, double score) {
         try {
+            // 获取详细得分
             String detailsUrl = String.format("https://hfs-be.yunxiao.com/v3/exam/%s/papers/%s/answer-picture?pid=%s",
                     examId, paperId, pid);
 
             Login login = new Login();
             String detailsResponse = login.getExamDetails(detailsUrl, cookies);
+            System.out.println("原始 JSON 响应:\n" + detailsResponse);
 
-            // Print raw JSON response for debugging
-            System.out.println("Raw JSON Response:\n" + detailsResponse);
+            // 获取排名信息
+            String rankInfoResponse = fetchRankInfo(examId, paperId, cookies);
+            System.out.println("排名信息响应:\n" + rankInfoResponse);
 
             JFrame detailsFrame = new JFrame("详细得分 - " + subject);
             detailsFrame.setSize(840, 600);
@@ -39,6 +42,27 @@ public class ExamDetailsUI extends JFrame {
             JPanel formattedPanel = formatDetailedScores(detailsResponse, cookies, false);
             JScrollPane formattedScrollPane = new JScrollPane(formattedPanel);
 
+            // 创建排名信息面板
+            JPanel rankInfoPanel = formatRankInfo(rankInfoResponse, detailsResponse, score,totalScore);
+            rankInfoPanel.setVisible(true); // 初始状态设置为可见
+
+            // 创建切换按钮
+            JButton toggleButton = new JButton("隐藏排名信息");
+            toggleButton.addActionListener(e -> {
+                boolean isVisible = rankInfoPanel.isVisible();
+                rankInfoPanel.setVisible(!isVisible);
+                toggleButton.setText(isVisible ? "显示排名信息" : "隐藏排名信息");
+                panel.revalidate(); // 刷新面板
+                panel.repaint();    // 重绘面板
+            });
+
+            // 创建一个面板用于显示排名信息和切换按钮
+            JPanel rankPanel = new JPanel();
+            rankPanel.setLayout(new BorderLayout());
+            rankPanel.add(toggleButton, BorderLayout.NORTH);
+            rankPanel.add(rankInfoPanel, BorderLayout.CENTER);
+
+            // 创建原始 JSON 响应文本区域
             JTextArea rawTextArea = new JTextArea();
             rawTextArea.setEditable(false);
             rawTextArea.setText("原始 JSON 响应:\n" + detailsResponse);
@@ -52,9 +76,10 @@ public class ExamDetailsUI extends JFrame {
             buttonPanel.add(viewWrongButton);
             buttonPanel.add(backButton);
 
-            // Add action listeners to buttons
+            // 添加按钮的事件监听器
             viewAllButton.addActionListener(e -> {
                 panel.removeAll();
+                panel.add(rankPanel, BorderLayout.NORTH);
                 panel.add(formattedScrollPane, BorderLayout.CENTER);
                 panel.add(buttonPanel, BorderLayout.SOUTH);
                 panel.revalidate();
@@ -62,9 +87,10 @@ public class ExamDetailsUI extends JFrame {
             });
 
             viewWrongButton.addActionListener(e -> {
-                JPanel wrongPanel = formatDetailedScores(detailsResponse, cookies, true); // Pass a flag to filter wrong questions
+                JPanel wrongPanel = formatDetailedScores(detailsResponse, cookies, true);
                 panel.removeAll();
                 JScrollPane wrongScrollPane = new JScrollPane(wrongPanel);
+                panel.add(rankPanel, BorderLayout.NORTH);
                 panel.add(wrongScrollPane, BorderLayout.CENTER);
                 panel.add(buttonPanel, BorderLayout.SOUTH);
                 panel.revalidate();
@@ -72,13 +98,14 @@ public class ExamDetailsUI extends JFrame {
             });
 
             backButton.addActionListener(e -> {
-                detailsFrame.dispose(); // Close the frame
+                detailsFrame.dispose(); // 关闭窗口
             });
 
-            panel.add(formattedScrollPane, BorderLayout.CENTER);
-            panel.add(buttonPanel, BorderLayout.SOUTH);
+            // 初始化面板
+            panel.add(rankPanel, BorderLayout.NORTH); // 添加排名信息面板
+            panel.add(formattedScrollPane, BorderLayout.CENTER); // 添加详细得分面板
+            panel.add(buttonPanel, BorderLayout.SOUTH); // 添加按钮
             detailsFrame.add(panel);
-
             detailsFrame.setVisible(true);
 
         } catch (Exception e) {
@@ -86,6 +113,9 @@ public class ExamDetailsUI extends JFrame {
             JOptionPane.showMessageDialog(null, "无法获取详细得分。");
         }
     }
+
+
+
 
     private JPanel formatDetailedScores(String detailsResponse, Map<String, String> cookies, boolean onlyWrong) {
         JPanel panel = new JPanel();
@@ -103,6 +133,9 @@ public class ExamDetailsUI extends JFrame {
             if (questions == null) {
                 throw new JSONException("No questions field in data.");
             }
+
+            // 总得分和总满分
+            int totalMaxScore = 0;
 
             // 计算所有主观题的 URL
             List<String> subjectiveUrls = new ArrayList<>();
@@ -130,6 +163,10 @@ public class ExamDetailsUI extends JFrame {
                 int type = question.getInt("type");
                 String myAnswer = question.optString("myAnswer", "无");
                 String answer = question.optString("answer", "无");
+
+                // 累加总得分和总满分
+                totalScore += score;
+                totalMaxScore += mafen;
 
                 // Skip questions if we are only displaying wrong ones and the score equals the maximum
                 if (onlyWrong && score == mafen) {
@@ -183,12 +220,91 @@ public class ExamDetailsUI extends JFrame {
                 panel.add(questionPanel);
             }
 
+            // 在面板底部添加总得分
+            JLabel totalScoreLabel = new JLabel(String.format("<html><span style='font-size:28px; font-weight:bold;'>总得分: .0f</span>" +
+                    "<span style='font-size:24px; font-weight:bold; color: #666666;'> / %.0f</span></html>", totalScore, totalMaxScore));
+            panel.add(totalScoreLabel);
+
         } catch (JSONException e) {
             e.printStackTrace();
         }
 
         return panel;
     }
+
+    private String fetchRankInfo(String examId, String paperId, Map<String, String> cookies) {
+        String url = String.format("https://hfs-be.yunxiao.com/v3/exam/%s/papers/%s/rank-info", examId, paperId);
+        StringBuilder response = new StringBuilder();
+
+        try {
+            URL rankUrl = new URL(url);
+            HttpURLConnection connection = (HttpURLConnection) rankUrl.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setRequestProperty("Cookie", String.join("; ", cookies.entrySet().stream()
+                    .map(entry -> entry.getKey() + "=" + entry.getValue())
+                    .toArray(String[]::new)));
+
+            BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+            String inputLine;
+
+            while ((inputLine = in.readLine()) != null) {
+                response.append(inputLine);
+            }
+            in.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return response.toString();
+    }
+    private JPanel formatRankInfo(String rankInfoResponse, String detailsResponse, Double score, Double totalScore) {
+        JPanel rankInfoPanel = new JPanel();
+        rankInfoPanel.setLayout(new GridLayout(6, 1)); // 调整以适应所有信息，包括总分
+        rankInfoPanel.setBorder(new EmptyBorder(10, 10, 10, 10)); // 添加内边距
+
+        try {
+            JSONObject jsonResponse = new JSONObject(rankInfoResponse);
+            JSONObject data = jsonResponse.getJSONObject("data");
+            JSONObject highest = data.getJSONObject("highest");
+            JSONObject avg = data.getJSONObject("avg");
+            JSONObject rank = data.getJSONObject("rank");
+            JSONObject number = data.getJSONObject("number");
+
+            // 格式化输出字符串，使用HTML以获得更好的字体大小和样式
+            //String totalScoreString = String.format("<html><span style='font-size: 20px; font-weight: bold;'>总得分: %.0f / %d</span></html>", totalScore);
+            String myScoreString = String.format("<html><span style='font-size: 20px; font-weight: bold;'>我的分数: %s </span></html>", formatScore(totalScore));
+            String highestScores = String.format("<html><span style='font-size: 14px;'>年级最高分<span style='color: gray;'>/</span>班级最高分: %s<span style='color: gray;'>/</span>%s</span></html>",
+                    formatScore(highest.getDouble("grade")), formatScore(highest.getDouble("class")));
+            String avgScores = String.format("<html><span style='font-size: 14px;'>班级平均分<span style='color: gray;'>/</span>年级平均分: %s<span style='color: gray;'>/</span>%s</span></html>",
+                    formatScore(avg.getDouble("class")), formatScore(avg.getDouble("grade")));
+            String classRanking = String.format("<html><span style='font-size: 14px;'>班级排名: %d<span style='color: gray;'>/</span>%d</span></html>",
+                    rank.getInt("class"), number.getInt("class"));
+            String gradeRanking = String.format("<html><span style='font-size: 14px;'>年级排名: %d<span style='color: gray;'>/</span>%d</span></html>",
+                    rank.getInt("grade"), number.getInt("grade"));
+
+            // 添加总分和其他信息到面板
+            //rankInfoPanel.add(new JLabel(totalScoreString));  // 显示总得分
+            rankInfoPanel.add(new JLabel(myScoreString));
+            rankInfoPanel.add(new JLabel(highestScores));
+            rankInfoPanel.add(new JLabel(avgScores));
+            rankInfoPanel.add(new JLabel(classRanking));
+            rankInfoPanel.add(new JLabel(gradeRanking));
+
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        return rankInfoPanel;
+    }
+
+    // 格式化得分的方法，去掉小数部分如果是0
+    private String formatScore(double score) {
+        return (score % 1 == 0) ? String.format("%.0f", score) : String.format("%.2f", score);
+    }
+
+
+
+
 
     private List<ImageIcon> downloadSubjectiveAnswers(List<String> urls, Map<String, String> cookies) {
         List<ImageIcon> images = new ArrayList<>();
@@ -285,4 +401,3 @@ public class ExamDetailsUI extends JFrame {
 
 
 }
-
